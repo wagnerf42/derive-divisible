@@ -40,6 +40,37 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     proc_macro::TokenStream::from(expanded)
 }
 
+#[proc_macro_derive(DivisibleIntoBlocks, attributes(divide_by))]
+pub fn derive_divisible_into_blocks(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+    let generics = input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    // split into tuple of couples (left and right)
+    let split_expression = generate_split_into_blocks_declarations(&input.data);
+    // move tuple into fields of split structure
+    let left_fields = generate_fields(&input.data, 0);
+    let right_fields = generate_fields(&input.data, 1);
+
+    let expanded = quote! {
+        impl #impl_generics DivisibleIntoBlocks for #name #ty_generics #where_clause {
+            fn divide_at(self, index: usize) -> (Self, Self) {
+                #split_expression
+                (
+                    #name {
+                        #left_fields
+                    },
+                    #name{
+                        #right_fields
+                    }
+                )
+            }
+        }
+    };
+    proc_macro::TokenStream::from(expanded)
+}
+
 /// What strategy to apply when dividing a field.
 #[derive(Debug, PartialEq, Eq)]
 enum DivideBy {
@@ -96,35 +127,30 @@ fn find_strategy(field: &syn::Field) -> DivideBy {
 /// Index indicate if we fill left or right structure.
 fn generate_fields(data: &Data, index: usize) -> TokenStream {
     match *data {
-        Data::Struct(ref data) => {
-            match data.fields {
-                Fields::Named(ref fields) => {
-                    let recurse = fields.named.iter().enumerate().map(|(i, f)| {
-                        let name = &f.ident;
-                        quote! {
-                            #name: (split_fields.#i).#index
-                        }
-                    });
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                let recurse = fields.named.iter().enumerate().map(|(i, f)| {
+                    let name = &f.ident;
                     quote! {
-                        #(#recurse, )*
+                        #name: (split_fields.#i).#index
                     }
-                }
-                Fields::Unnamed(ref fields) => {
-                    let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
-                        quote! {
-                            (split_fields.#i).#index
-                        }
-                    });
-                    quote! {
-                        #(#recurse, )*
-                    }
-                }
-                Fields::Unit => {
-                    // Unit structs have a base length of 0.
-                    quote!()
+                });
+                quote! {
+                    #(#recurse, )*
                 }
             }
-        }
+            Fields::Unnamed(ref fields) => {
+                let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
+                    quote! {
+                        (split_fields.#i).#index
+                    }
+                });
+                quote! {
+                    #(#recurse, )*
+                }
+            }
+            Fields::Unit => quote!(),
+        },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     }
 }
@@ -132,66 +158,61 @@ fn generate_fields(data: &Data, index: usize) -> TokenStream {
 /// Generate the function splitting the divisible
 fn generate_split_declarations(data: &Data) -> TokenStream {
     match *data {
-        Data::Struct(ref data) => {
-            match data.fields {
-                Fields::Named(ref fields) => {
-                    let recurse = fields.named.iter().map(|f| {
-                        let name = &f.ident;
-                        match find_strategy(&f) {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                let recurse = fields.named.iter().map(|f| {
+                    let name = &f.ident;
+                    match find_strategy(&f) {
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#name, self.#name)
+                            }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#name, Default::default())
+                            }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#name.divide()
+                            }
+                        }
+                    }
+                });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
+                }
+            }
+            Fields::Unnamed(ref fields) => {
+                let recurse =
+                    fields
+                        .unnamed
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| match find_strategy(&f) {
                             DivideBy::Copy => {
                                 quote! {
-                                    (self.#name, self.#name)
+                                    (self.#i, self.#i)
                                 }
                             }
                             DivideBy::Default => {
                                 quote! {
-                                    (self.#name, Default::default())
+                                    (self.#i, Default::default())
                                 }
                             }
                             DivideBy::Divisible => {
                                 quote! {
-                                    self.#name.divide()
+                                    self.#i.divide()
                                 }
                             }
-                        }
-                    });
-                    quote! {
-                        let split_fields = (#(#recurse, )*);
-                    }
-                }
-                Fields::Unnamed(ref fields) => {
-                    let recurse =
-                        fields
-                            .unnamed
-                            .iter()
-                            .enumerate()
-                            .map(|(i, f)| match find_strategy(&f) {
-                                DivideBy::Copy => {
-                                    quote! {
-                                        (self.#i, self.#i)
-                                    }
-                                }
-                                DivideBy::Default => {
-                                    quote! {
-                                        (self.#i, Default::default())
-                                    }
-                                }
-                                DivideBy::Divisible => {
-                                    quote! {
-                                        self.#i.divide()
-                                    }
-                                }
-                            });
-                    quote! {
-                        let split_fields = (#(#recurse, )*);
-                    }
-                }
-                Fields::Unit => {
-                    // Unit structs have a base length of 0.
-                    quote!()
+                        });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
                 }
             }
-        }
+            Fields::Unit => quote!(),
+        },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     }
 }
@@ -233,6 +254,68 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                 }
             }
         }
+        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    }
+}
+
+/// Generate the function splitting the divisible
+fn generate_split_into_blocks_declarations(data: &Data) -> TokenStream {
+    match *data {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                let recurse = fields.named.iter().map(|f| {
+                    let name = &f.ident;
+                    match find_strategy(&f) {
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#name, self.#name)
+                            }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#name, Default::default())
+                            }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#name.divide_at(index)
+                            }
+                        }
+                    }
+                });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
+                }
+            }
+            Fields::Unnamed(ref fields) => {
+                let recurse =
+                    fields
+                        .unnamed
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| match find_strategy(&f) {
+                            DivideBy::Copy => {
+                                quote! {
+                                    (self.#i, self.#i)
+                                }
+                            }
+                            DivideBy::Default => {
+                                quote! {
+                                    (self.#i, Default::default())
+                                }
+                            }
+                            DivideBy::Divisible => {
+                                quote! {
+                                    self.#i.divide_at(index)
+                                }
+                            }
+                        });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
+                }
+            }
+            Fields::Unit => quote!(),
+        },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     }
 }

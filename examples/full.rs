@@ -1,5 +1,5 @@
 extern crate deriving;
-use deriving::Divisible;
+use deriving::{Divisible, DivisibleIntoBlocks};
 
 trait Divisible: Sized {
     fn base_length(&self) -> usize;
@@ -16,7 +16,21 @@ impl<T> Divisible for &[T] {
     }
 }
 
-#[derive(Divisible, Debug)]
+trait DivisibleIntoBlocks: Divisible {
+    fn divide_at(self, index: usize) -> (Self, Self);
+}
+
+impl<T> DivisibleIntoBlocks for &[T] {
+    fn divide_at(self, index: usize) -> (Self, Self) {
+        self.split_at(index)
+    }
+}
+
+trait DivisibleAtIndex: DivisibleIntoBlocks {}
+
+impl<T> DivisibleAtIndex for &[T] {}
+
+#[derive(Divisible, DivisibleIntoBlocks, Debug)]
 struct Foo<'a, 'b, T: Sized + Copy> {
     #[divide_by(copy)]
     foo: T,

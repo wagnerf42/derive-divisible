@@ -1,11 +1,8 @@
 extern crate proc_macro;
 
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{
-    parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Generics, Index,
-};
+use quote::quote;
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 #[proc_macro_derive(Divisible, attributes(divide_by))]
 pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -13,11 +10,30 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    // implement base_length
     let len_expression = generate_len_expression(&input.data);
+
+    // split into tuple of couples (left and right)
+    let split_expression = generate_split_declarations(&input.data);
+    // move tuple into fields of split structure
+    let left_fields = generate_fields(&input.data, 0);
+    let right_fields = generate_fields(&input.data, 1);
+
     let expanded = quote! {
         impl #impl_generics Divisible for #name #ty_generics #where_clause {
-            fn length(&self) -> usize {
+            fn base_length(&self) -> usize {
                 #len_expression
+            }
+            fn divide(self) -> (Self, Self) {
+                #split_expression
+                (
+                    #name {
+                        #left_fields
+                    },
+                    #name{
+                        #right_fields
+                    }
+                )
             }
         }
     };
@@ -75,6 +91,111 @@ fn find_strategy(field: &syn::Field) -> DivideBy {
         .unwrap_or(DivideBy::Divisible)
 }
 
+/// Fill fields of target struct from content of tuple storing
+/// split fields.
+/// Index indicate if we fill left or right structure.
+fn generate_fields(data: &Data, index: usize) -> TokenStream {
+    match *data {
+        Data::Struct(ref data) => {
+            match data.fields {
+                Fields::Named(ref fields) => {
+                    let recurse = fields.named.iter().enumerate().map(|(i, f)| {
+                        let name = &f.ident;
+                        quote! {
+                            #name: (split_fields.#i).#index
+                        }
+                    });
+                    quote! {
+                        #(#recurse, )*
+                    }
+                }
+                Fields::Unnamed(ref fields) => {
+                    let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
+                        quote! {
+                            (split_fields.#i).#index
+                        }
+                    });
+                    quote! {
+                        #(#recurse, )*
+                    }
+                }
+                Fields::Unit => {
+                    // Unit structs have a base length of 0.
+                    quote!()
+                }
+            }
+        }
+        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    }
+}
+
+/// Generate the function splitting the divisible
+fn generate_split_declarations(data: &Data) -> TokenStream {
+    match *data {
+        Data::Struct(ref data) => {
+            match data.fields {
+                Fields::Named(ref fields) => {
+                    let recurse = fields.named.iter().map(|f| {
+                        let name = &f.ident;
+                        match find_strategy(&f) {
+                            DivideBy::Copy => {
+                                quote! {
+                                    (self.#name, self.#name)
+                                }
+                            }
+                            DivideBy::Default => {
+                                quote! {
+                                    (self.#name, Default::default())
+                                }
+                            }
+                            DivideBy::Divisible => {
+                                quote! {
+                                    self.#name.divide()
+                                }
+                            }
+                        }
+                    });
+                    quote! {
+                        let split_fields = (#(#recurse, )*);
+                    }
+                }
+                Fields::Unnamed(ref fields) => {
+                    let recurse =
+                        fields
+                            .unnamed
+                            .iter()
+                            .enumerate()
+                            .map(|(i, f)| match find_strategy(&f) {
+                                DivideBy::Copy => {
+                                    quote! {
+                                        (self.#i, self.#i)
+                                    }
+                                }
+                                DivideBy::Default => {
+                                    quote! {
+                                        (self.#i, Default::default())
+                                    }
+                                }
+                                DivideBy::Divisible => {
+                                    quote! {
+                                        self.#i.divide()
+                                    }
+                                }
+                            });
+                    quote! {
+                        let split_fields = (#(#recurse, )*);
+                    }
+                }
+                Fields::Unit => {
+                    // Unit structs have a base length of 0.
+                    quote!()
+                }
+            }
+        }
+        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    }
+}
+
 /// compute base length of the structure
 fn generate_len_expression(data: &Data) -> TokenStream {
     match *data {
@@ -94,19 +215,17 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                     }
                 }
                 Fields::Unnamed(ref fields) => {
-                    unimplemented!()
-                    //                    // Expands to an expression like
-                    //                    //
-                    //                    //     0 + self.0.heap_size() + self.1.heap_size() + self.2.heap_size()
-                    //                    let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
-                    //                        let index = Index::from(i);
-                    //                        quote_spanned! {f.span()=>
-                    //                            ::heapsize::HeapSize::heap_size_of_children(&self.#index)
-                    //                        }
-                    //                    });
-                    //                    quote! {
-                    //                        0 #(+ #recurse)*
-                    //                    }
+                    let recurse = fields
+                        .unnamed
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, f)| find_strategy(f) == DivideBy::Divisible)
+                        .map(|(i, _)| {
+                            quote! {::std::iter::once(self.#i.len())}
+                        });
+                    quote! {
+                        ::std::iter::once(0)#(.chain(#recurse))*.max().unwrap()
+                    }
                 }
                 Fields::Unit => {
                     // Unit structs have a base length of 0.

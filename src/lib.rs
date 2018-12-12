@@ -1,3 +1,10 @@
+//! This crate provides automatic derivation for `rayon-adaptive`
+//! divisibility traits. If you don't know them you should go there first.
+//! By default it will just divide all fields but you can use attributes to specify
+//! two different behaviors.
+//! `clone` will instead clone the field to get the same value on both sides and
+//! `default` will keep the value on the left side and reset the value on a default value
+//! on the right side.
 extern crate proc_macro;
 
 use proc_macro2::TokenStream;
@@ -71,12 +78,24 @@ pub fn derive_divisible_into_blocks(input: proc_macro::TokenStream) -> proc_macr
     proc_macro::TokenStream::from(expanded)
 }
 
+#[proc_macro_derive(DivisibleAtIndex, attributes(divide_by))]
+pub fn derive_divisible_at_index(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+    let generics = input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let expanded = quote! {
+        impl #impl_generics DivisibleAtIndex for #name #ty_generics #where_clause {}
+    };
+    proc_macro::TokenStream::from(expanded)
+}
+
 /// What strategy to apply when dividing a field.
 #[derive(Debug, PartialEq, Eq)]
 enum DivideBy {
-    /// Copy the field
-    Copy,
-    /// Take a default value
+    /// Clone the field
+    Clone,
+    /// Take a default value on right side and move on the left
     Default,
     /// Divide using divisible
     Divisible,
@@ -106,8 +125,8 @@ fn find_strategy(field: &syn::Field) -> DivideBy {
                     possible_id_token.map(|token| match token {
                         proc_macro2::TokenTree::Ident(i) => {
                             let ident = i.to_string();
-                            if ident == "copy" {
-                                DivideBy::Copy
+                            if ident == "clone" {
+                                DivideBy::Clone
                             } else if ident == "default" {
                                 DivideBy::Default
                             } else {
@@ -163,9 +182,9 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                 let recurse = fields.named.iter().map(|f| {
                     let name = &f.ident;
                     match find_strategy(&f) {
-                        DivideBy::Copy => {
+                        DivideBy::Clone => {
                             quote! {
-                                (self.#name, self.#name)
+                                (self.#name.clone(), self.#name)
                             }
                         }
                         DivideBy::Default => {
@@ -191,9 +210,9 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                         .iter()
                         .enumerate()
                         .map(|(i, f)| match find_strategy(&f) {
-                            DivideBy::Copy => {
+                            DivideBy::Clone => {
                                 quote! {
-                                    (self.#i, self.#i)
+                                    (self.#i.clone(), self.#i)
                                 }
                             }
                             DivideBy::Default => {
@@ -266,9 +285,9 @@ fn generate_split_into_blocks_declarations(data: &Data) -> TokenStream {
                 let recurse = fields.named.iter().map(|f| {
                     let name = &f.ident;
                     match find_strategy(&f) {
-                        DivideBy::Copy => {
+                        DivideBy::Clone => {
                             quote! {
-                                (self.#name, self.#name)
+                                (self.#name.clone(), self.#name)
                             }
                         }
                         DivideBy::Default => {
@@ -294,9 +313,9 @@ fn generate_split_into_blocks_declarations(data: &Data) -> TokenStream {
                         .iter()
                         .enumerate()
                         .map(|(i, f)| match find_strategy(&f) {
-                            DivideBy::Copy => {
+                            DivideBy::Clone => {
                                 quote! {
-                                    (self.#i, self.#i)
+                                    (self.#i.clone(), self.#i)
                                 }
                             }
                             DivideBy::Default => {

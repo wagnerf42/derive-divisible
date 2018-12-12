@@ -1,5 +1,5 @@
 [[package]]
-name = "deriving"
+name = "derive-divisible"
 version = "0.1.0"
 dependencies = [
  "proc-macro2 0.4.24 (registry+https://github.com/rust-lang/crates.io-index)",

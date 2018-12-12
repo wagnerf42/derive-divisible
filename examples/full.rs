@@ -1,5 +1,5 @@
-extern crate deriving;
-use deriving::{Divisible, DivisibleAtIndex, DivisibleIntoBlocks};
+extern crate derive_divisible;
+use derive_divisible::{Divisible, DivisibleAtIndex, DivisibleIntoBlocks};
 
 trait Divisible: Sized {
     fn base_length(&self) -> usize;

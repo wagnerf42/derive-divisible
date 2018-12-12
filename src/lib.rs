@@ -248,7 +248,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                         .filter(|f| find_strategy(f) == DivideBy::Divisible)
                         .map(|f| {
                             let name = &f.ident;
-                            quote! {::std::iter::once(self.#name.len())}
+                            quote! {::std::iter::once(self.#name.base_length())}
                         });
                     quote! {
                         ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()
@@ -261,7 +261,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                         .enumerate()
                         .filter(|&(_, f)| find_strategy(f) == DivideBy::Divisible)
                         .map(|(i, _)| {
-                            quote! {::std::iter::once(self.#i.len())}
+                            quote! {::std::iter::once(self.#i.base_length())}
                         });
                     quote! {
                         ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()

@@ -251,7 +251,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#name.len())}
                         });
                     quote! {
-                        ::std::iter::once(0)#(.chain(#recurse))*.max().unwrap()
+                        ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()
                     }
                 }
                 Fields::Unnamed(ref fields) => {
@@ -264,12 +264,12 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#i.len())}
                         });
                     quote! {
-                        ::std::iter::once(0)#(.chain(#recurse))*.max().unwrap()
+                        ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()
                     }
                 }
                 Fields::Unit => {
-                    // Unit structs have a base length of 0.
-                    quote!(0)
+                    // Unit structs have an infinite base length
+                    quote!(std::usize::MAX)
                 }
             }
         }

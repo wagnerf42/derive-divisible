@@ -68,12 +68,7 @@ fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) ->
 
 /// Extract power attribute's value
 fn power_type(attributes: &[Attribute]) -> String {
-    let power = attributes_search(attributes, "power").expect("missing power attribute");
-    match power.as_ref() {
-        "BasicPower" | "BlockedPower" | "IndexedPower" => (),
-        _ => panic!("wrong power given"),
-    }
-    power
+    attributes_search(attributes, "power").expect("missing power attribute")
 }
 
 #[proc_macro_derive(DivisibleIntoBlocks, attributes(divide_by))]

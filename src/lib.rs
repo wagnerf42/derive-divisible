@@ -7,13 +7,14 @@
 //! on the right side.
 extern crate proc_macro;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
 
-#[proc_macro_derive(Divisible, attributes(divide_by))]
+#[proc_macro_derive(Divisible, attributes(divide_by, power))]
 pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    let power = power_type(&input.attrs);
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -28,6 +29,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
     let expanded = quote! {
         impl #impl_generics Divisible for #name #ty_generics #where_clause {
+            type Power = #power;
             fn base_length(&self) -> usize {
                 #len_expression
             }
@@ -45,6 +47,29 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
         }
     };
     proc_macro::TokenStream::from(expanded)
+}
+
+/// Return argument of first attribute with given name.
+fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) -> Option<TokenTree> {
+    attributes
+        .into_iter()
+        .find(|a| {
+            let i = syn::Ident::new(searched_attribute_name, proc_macro2::Span::call_site());
+            a.path.is_ident(i)
+        })
+        .and_then(|a| {
+            // look further into the group of arguments
+            let possible_group: Result<proc_macro2::Group, _> = syn::parse2(a.tts.clone());
+            possible_group.ok().and_then(|g| {
+                // we only care about first argument
+                g.stream().into_iter().next()
+            })
+        })
+}
+
+/// Extract power attribute's value
+fn power_type(attributes: &[Attribute]) -> TokenTree {
+    attributes_search(attributes, "power").expect("missing power attribute")
 }
 
 #[proc_macro_derive(DivisibleIntoBlocks, attributes(divide_by))]
@@ -103,40 +128,19 @@ enum DivideBy {
 
 /// figure out what division strategy to use for a given field.
 fn find_strategy(field: &syn::Field) -> DivideBy {
-    // loop on all attributes
-    field
-        .attrs
-        .as_slice()
-        .into_iter()
-        .filter(|a| {
-            // only the first "divide_by" attribute is interesting
-            let i = syn::Ident::new("divide_by", proc_macro2::Span::call_site());
-            a.path.is_ident(i)
-        })
-        .next()
-        .map(|a| {
-            // look further into the group of arguments
-            let possible_group: Result<proc_macro2::Group, _> = syn::parse2(a.tts.clone());
-            possible_group
-                .ok()
-                .and_then(|g| {
-                    // we only care about first argument
-                    let possible_id_token = g.stream().into_iter().next();
-                    possible_id_token.map(|token| match token {
-                        proc_macro2::TokenTree::Ident(i) => {
-                            let ident = i.to_string();
-                            if ident == "clone" {
-                                DivideBy::Clone
-                            } else if ident == "default" {
-                                DivideBy::Default
-                            } else {
-                                DivideBy::Divisible
-                            }
-                        }
-                        _ => DivideBy::Divisible,
-                    })
-                })
-                .unwrap_or(DivideBy::Divisible)
+    attributes_search(&field.attrs, "divide_by")
+        .map(|token| match token {
+            proc_macro2::TokenTree::Ident(i) => {
+                let ident = i.to_string();
+                if ident == "clone" {
+                    DivideBy::Clone
+                } else if ident == "default" {
+                    DivideBy::Default
+                } else {
+                    DivideBy::Divisible
+                }
+            }
+            _ => DivideBy::Divisible,
         })
         .unwrap_or(DivideBy::Divisible)
 }

@@ -7,14 +7,14 @@
 //! on the right side.
 extern crate proc_macro;
 
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident};
 
 #[proc_macro_derive(Divisible, attributes(divide_by, power))]
 pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let power = power_type(&input.attrs);
+    let power = Ident::new(&power_type(&input.attrs), Span::call_site());
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -50,7 +50,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 }
 
 /// Return argument of first attribute with given name.
-fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) -> Option<TokenTree> {
+fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) -> Option<String> {
     attributes
         .into_iter()
         .find(|a| {
@@ -60,16 +60,20 @@ fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) ->
         .and_then(|a| {
             // look further into the group of arguments
             let possible_group: Result<proc_macro2::Group, _> = syn::parse2(a.tts.clone());
-            possible_group.ok().and_then(|g| {
-                // we only care about first argument
-                g.stream().into_iter().next()
-            })
+            possible_group
+                .ok()
+                .map(|g| g.stream().into_iter().map(|t| t.to_string()).collect())
         })
 }
 
 /// Extract power attribute's value
-fn power_type(attributes: &[Attribute]) -> TokenTree {
-    attributes_search(attributes, "power").expect("missing power attribute")
+fn power_type(attributes: &[Attribute]) -> String {
+    let power = attributes_search(attributes, "power").expect("missing power attribute");
+    match power.as_ref() {
+        "BasicPower" | "BlockedPower" | "IndexedPower" => (),
+        _ => panic!("wrong power given"),
+    }
+    power
 }
 
 #[proc_macro_derive(DivisibleIntoBlocks, attributes(divide_by))]
@@ -129,17 +133,9 @@ enum DivideBy {
 /// figure out what division strategy to use for a given field.
 fn find_strategy(field: &syn::Field) -> DivideBy {
     attributes_search(&field.attrs, "divide_by")
-        .map(|token| match token {
-            proc_macro2::TokenTree::Ident(i) => {
-                let ident = i.to_string();
-                if ident == "clone" {
-                    DivideBy::Clone
-                } else if ident == "default" {
-                    DivideBy::Default
-                } else {
-                    DivideBy::Divisible
-                }
-            }
+        .map(|string| match string.as_ref() {
+            "clone" => DivideBy::Clone,
+            "default" => DivideBy::Default,
             _ => DivideBy::Divisible,
         })
         .unwrap_or(DivideBy::Divisible)

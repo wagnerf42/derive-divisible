@@ -1,7 +1,7 @@
 extern crate derive_divisible;
 use derive_divisible::{Divisible, DivisibleAtIndex, DivisibleIntoBlocks};
 
-struct IndexPower();
+struct IndexedPower();
 
 trait Divisible: Sized {
     type Power;
@@ -10,7 +10,7 @@ trait Divisible: Sized {
 }
 
 impl<T> Divisible for &[T] {
-    type Power = IndexPower;
+    type Power = IndexedPower;
     fn base_length(&self) -> usize {
         self.len()
     }
@@ -35,7 +35,7 @@ trait DivisibleAtIndex: DivisibleIntoBlocks {}
 impl<T> DivisibleAtIndex for &[T] {}
 
 #[derive(Divisible, DivisibleIntoBlocks, DivisibleAtIndex, Debug)]
-#[power(IndexPower)]
+#[power(IndexedPower)]
 struct Foo<'a, 'b, T: Sized + Copy> {
     #[divide_by(clone)]
     foo: T,

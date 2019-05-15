@@ -145,10 +145,12 @@ fn find_strategy(field: &syn::Field) -> DivideBy {
 /// split fields.
 /// Index indicate if we fill left or right structure.
 fn generate_fields(data: &Data, index: usize) -> TokenStream {
+    let index = syn::Index::from(index);
     match *data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 let recurse = fields.named.iter().enumerate().map(|(i, f)| {
+                    let i = syn::Index::from(i);
                     let name = &f.ident;
                     quote! {
                         #name: (split_fields.#i).#index
@@ -160,6 +162,7 @@ fn generate_fields(data: &Data, index: usize) -> TokenStream {
             }
             Fields::Unnamed(ref fields) => {
                 let recurse = fields.unnamed.iter().enumerate().map(|(i, _)| {
+                    let i = syn::Index::from(i);
                     quote! {
                         (split_fields.#i).#index
                     }
@@ -204,28 +207,26 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                 }
             }
             Fields::Unnamed(ref fields) => {
-                let recurse =
-                    fields
-                        .unnamed
-                        .iter()
-                        .enumerate()
-                        .map(|(i, f)| match find_strategy(&f) {
-                            DivideBy::Clone => {
-                                quote! {
-                                    (self.#i.clone(), self.#i)
-                                }
+                let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                    let i = syn::Index::from(i);
+                    match find_strategy(&f) {
+                        DivideBy::Clone => {
+                            quote! {
+                                (self.#i.clone(), self.#i)
                             }
-                            DivideBy::Default => {
-                                quote! {
-                                    (self.#i, Default::default())
-                                }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#i, Default::default())
                             }
-                            DivideBy::Divisible => {
-                                quote! {
-                                    self.#i.divide()
-                                }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#i.divide()
                             }
-                        });
+                        }
+                    }
+                });
                 quote! {
                     let split_fields = (#(#recurse, )*);
                 }
@@ -307,28 +308,26 @@ fn generate_split_into_blocks_declarations(data: &Data) -> TokenStream {
                 }
             }
             Fields::Unnamed(ref fields) => {
-                let recurse =
-                    fields
-                        .unnamed
-                        .iter()
-                        .enumerate()
-                        .map(|(i, f)| match find_strategy(&f) {
-                            DivideBy::Clone => {
-                                quote! {
-                                    (self.#i.clone(), self.#i)
-                                }
+                let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                    let i = syn::Index::from(i);
+                    match find_strategy(&f) {
+                        DivideBy::Clone => {
+                            quote! {
+                                (self.#i.clone(), self.#i)
                             }
-                            DivideBy::Default => {
-                                quote! {
-                                    (self.#i, Default::default())
-                                }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#i, Default::default())
                             }
-                            DivideBy::Divisible => {
-                                quote! {
-                                    self.#i.divide_at(index)
-                                }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#i.divide_at(index)
                             }
-                        });
+                        }
+                    }
+                });
                 quote! {
                     let split_fields = (#(#recurse, )*);
                 }

@@ -313,18 +313,18 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
         impl #impl_generics IntoIterator for #name #ty_generics #where_clause {
             type Item = #item;
             type IntoIter = std::iter::FlatMap<
-                    BlocksIterator<#power, Self, Box<Iterator<Item = usize>>>,
+                    crate::divisibility::BlocksIterator<#power, Self, Box<Iterator<Item = usize>>>,
                     std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<Self::Item>>>,
                     fn(Self) -> std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<Self::Item>>>,
             >;
-            fn into_iter(self) -> Self::IntoIter {
+            fn into_iter(mut self) -> Self::IntoIter {
                 let sizes = self.blocks_sizes();
                 self.blocks(sizes).flat_map(|b| {
                     b.fold(Vec::new, |mut v, e| {
-                        v.append(e);
+                        v.push(e);
                         v
                     }).map(|v| std::iter::once(v).collect::<std::collections::LinkedList<Vec<Self::Item>>>())
-                    .reduce(std::collections::LinkedList::new, |mut l1, l2| {
+                    .reduce(std::collections::LinkedList::new, |mut l1, mut l2| {
                         l1.append(&mut l2);
                         l1
                     }).into_iter().flatten()

@@ -324,7 +324,7 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
                         v.append(e);
                         v
                     }).map(|v| std::iter::once(v).collect::<std::collections::LinkedList<Vec<Self::Item>>>())
-                    .reduce(|mut l1, l2| {
+                    .reduce(std::collections::LinkedList::new, |mut l1, l2| {
                         l1.append(&mut l2);
                         l1
                     }).into_iter().flatten()

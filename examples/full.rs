@@ -10,6 +10,44 @@ enum Policy {
     Rayon(usize),
 }
 
+/// Iterator on some `Divisible` input by blocks.
+struct BlocksIterator<P, I: Divisible<P>, S: Iterator<Item = usize>> {
+    /// sizes of all the remaining blocks
+    pub(crate) sizes: S,
+    /// remaining input
+    pub(crate) remaining: Option<I>,
+    pub(crate) phantom: PhantomData<P>,
+}
+
+impl<P, I: Divisible<P>, S: Iterator<Item = usize>> Iterator for BlocksIterator<P, I, S> {
+    type Item = I;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining.is_none() {
+            // no input left
+            return None;
+        }
+
+        let remaining_length = self.remaining.as_ref().and_then(I::base_length);
+        if let Some(length) = remaining_length {
+            if length == 0 {
+                // no input left
+                return None;
+            }
+        }
+
+        let current_size = self.sizes.next();
+        if let Some(size) = current_size {
+            let remaining_input = self.remaining.take().unwrap();
+            let (left, right) = remaining_input.divide_at(size);
+            std::mem::replace(&mut self.remaining, Some(right));
+            Some(left)
+        } else {
+            // no sizes left, return everything thats left to process
+            self.remaining.take()
+        }
+    }
+}
+
 // let's start by re-declaring the traits
 trait Divisible<P>: Sized {
     fn base_length(&self) -> Option<usize>;
@@ -17,6 +55,14 @@ trait Divisible<P>: Sized {
     fn divide(self) -> (Self, Self) {
         let mid = self.base_length().expect("infinite") / 2;
         self.divide_at(mid)
+    }
+    /// Return a sequential iterator on blocks of Self of given sizes.
+    fn blocks<S: Iterator<Item = usize>>(self, sizes: S) -> BlocksIterator<P, Self, S> {
+        BlocksIterator {
+            sizes,
+            remaining: Some(self),
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -65,11 +111,13 @@ impl<'a, T: 'a + Sync> ParallelIterator<IndexedPower> for &'a [T] {
 
 /// now let's derive some stuff
 
-#[derive(Divisible, ParallelIterator, Debug)]
+//#[derive(Divisible, ParallelIterator, Debug)]
+//#[power(P)]
+//#[item(R)]
+//#[sequential_iterator(iter::Map<I::SequentialIterator, F>)]
+//#[iterator_extraction(i.map(self.map_op.clone()))]
+#[derive(Divisible, Debug)]
 #[power(P)]
-#[item(R)]
-#[sequential_iterator(iter::Map<I::SequentialIterator, F>)]
-#[iterator_extraction(i.map(self.map_op.clone()))]
 struct Map<R: Send, P: Send, I: ParallelIterator<P>, F: Clone + Send + Fn(I::Item) -> R> {
     #[divide_by(clone)]
     map_op: F,

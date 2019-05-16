@@ -3,8 +3,7 @@ use derive_divisible::Divisible;
 
 struct IndexedPower();
 
-trait Divisible: Sized {
-    type Power;
+trait Divisible<P>: Sized {
     fn base_length(&self) -> Option<usize>;
     fn divide_at(self, index: usize) -> (Self, Self);
     fn divide(self) -> (Self, Self) {
@@ -13,8 +12,7 @@ trait Divisible: Sized {
     }
 }
 
-impl<T> Divisible for &[T] {
-    type Power = IndexedPower;
+impl<T> Divisible<IndexedPower> for &[T] {
     fn base_length(&self) -> Option<usize> {
         Some(self.len())
     }

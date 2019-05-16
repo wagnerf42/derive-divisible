@@ -28,8 +28,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let right_fields = generate_fields(&input.data, 1);
 
     let expanded = quote! {
-        impl #impl_generics Divisible for #name #ty_generics #where_clause {
-            type Power = #power;
+        impl #impl_generics Divisible<#power> for #name #ty_generics #where_clause {
             fn base_length(&self) -> Option<usize> {
                 #len_expression
             }

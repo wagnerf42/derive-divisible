@@ -1,40 +1,29 @@
 extern crate derive_divisible;
-use derive_divisible::{Divisible, DivisibleAtIndex, DivisibleIntoBlocks};
+use derive_divisible::Divisible;
 
 struct IndexedPower();
 
 trait Divisible: Sized {
     type Power;
-    fn base_length(&self) -> usize;
-    fn divide(self) -> (Self, Self);
+    fn base_length(&self) -> Option<usize>;
+    fn divide_at(self, index: usize) -> (Self, Self);
+    fn divide(self) -> (Self, Self) {
+        let mid = self.base_length().expect("infinite") / 2;
+        self.divide_at(mid)
+    }
 }
 
 impl<T> Divisible for &[T] {
     type Power = IndexedPower;
-    fn base_length(&self) -> usize {
-        self.len()
+    fn base_length(&self) -> Option<usize> {
+        Some(self.len())
     }
-    fn divide(self) -> (Self, Self) {
-        let mid = self.len() / 2;
-        self.split_at(mid)
-    }
-}
-
-trait DivisibleIntoBlocks: Divisible {
-    fn divide_at(self, index: usize) -> (Self, Self);
-}
-
-impl<T> DivisibleIntoBlocks for &[T] {
     fn divide_at(self, index: usize) -> (Self, Self) {
         self.split_at(index)
     }
 }
 
-trait DivisibleAtIndex: DivisibleIntoBlocks {}
-
-impl<T> DivisibleAtIndex for &[T] {}
-
-#[derive(Divisible, DivisibleIntoBlocks, DivisibleAtIndex, Debug)]
+#[derive(Divisible, Debug)]
 #[power(IndexedPower)]
 struct Foo<'a, 'b, T: Sized + Copy> {
     #[divide_by(clone)]
@@ -54,7 +43,7 @@ fn main() {
         baz: &v1,
         baz2: &v2,
     };
-    println!("l: {}", f.base_length());
+    println!("l: {:?}", f.base_length());
     let (f1, f2) = f.divide();
     println!("left: {:?}, right: {:?}", f1, f2);
 }

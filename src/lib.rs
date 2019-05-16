@@ -30,10 +30,10 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let expanded = quote! {
         impl #impl_generics Divisible for #name #ty_generics #where_clause {
             type Power = #power;
-            fn base_length(&self) -> usize {
+            fn base_length(&self) -> Option<usize> {
                 #len_expression
             }
-            fn divide(self) -> (Self, Self) {
+            fn divide_at(self, index: usize) -> (Self, Self) {
                 #split_expression
                 (
                     #name {
@@ -67,49 +67,6 @@ fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) ->
 /// Extract power attribute's value
 fn power_type(attributes: &[Attribute]) -> Group {
     attributes_search(attributes, "power").expect("missing power attribute")
-}
-
-#[proc_macro_derive(DivisibleIntoBlocks, attributes(divide_by))]
-pub fn derive_divisible_into_blocks(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-    let generics = input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    // split into tuple of couples (left and right)
-    let split_expression = generate_split_into_blocks_declarations(&input.data);
-    // move tuple into fields of split structure
-    let left_fields = generate_fields(&input.data, 0);
-    let right_fields = generate_fields(&input.data, 1);
-
-    let expanded = quote! {
-        impl #impl_generics DivisibleIntoBlocks for #name #ty_generics #where_clause {
-            fn divide_at(self, index: usize) -> (Self, Self) {
-                #split_expression
-                (
-                    #name {
-                        #left_fields
-                    },
-                    #name{
-                        #right_fields
-                    }
-                )
-            }
-        }
-    };
-    proc_macro::TokenStream::from(expanded)
-}
-
-#[proc_macro_derive(DivisibleAtIndex, attributes(divide_by))]
-pub fn derive_divisible_at_index(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-    let generics = input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let expanded = quote! {
-        impl #impl_generics DivisibleAtIndex for #name #ty_generics #where_clause {}
-    };
-    proc_macro::TokenStream::from(expanded)
 }
 
 /// What strategy to apply when dividing a field.
@@ -177,66 +134,6 @@ fn generate_fields(data: &Data, index: usize) -> TokenStream {
     }
 }
 
-/// Generate the function splitting the divisible
-fn generate_split_declarations(data: &Data) -> TokenStream {
-    match *data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                let recurse = fields.named.iter().map(|f| {
-                    let name = &f.ident;
-                    match find_strategy(&f) {
-                        DivideBy::Clone => {
-                            quote! {
-                                (self.#name.clone(), self.#name)
-                            }
-                        }
-                        DivideBy::Default => {
-                            quote! {
-                                (self.#name, Default::default())
-                            }
-                        }
-                        DivideBy::Divisible => {
-                            quote! {
-                                self.#name.divide()
-                            }
-                        }
-                    }
-                });
-                quote! {
-                    let split_fields = (#(#recurse, )*);
-                }
-            }
-            Fields::Unnamed(ref fields) => {
-                let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
-                    let i = syn::Index::from(i);
-                    match find_strategy(&f) {
-                        DivideBy::Clone => {
-                            quote! {
-                                (self.#i.clone(), self.#i)
-                            }
-                        }
-                        DivideBy::Default => {
-                            quote! {
-                                (self.#i, Default::default())
-                            }
-                        }
-                        DivideBy::Divisible => {
-                            quote! {
-                                self.#i.divide()
-                            }
-                        }
-                    }
-                });
-                quote! {
-                    let split_fields = (#(#recurse, )*);
-                }
-            }
-            Fields::Unit => quote!(),
-        },
-        Data::Enum(_) | Data::Union(_) => unimplemented!(),
-    }
-}
-
 /// compute base length of the structure
 fn generate_len_expression(data: &Data) -> TokenStream {
     match *data {
@@ -252,7 +149,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#name.base_length())}
                         });
                     quote! {
-                        ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()
+                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.min().unwrap()
                     }
                 }
                 Fields::Unnamed(ref fields) => {
@@ -265,12 +162,12 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#i.base_length())}
                         });
                     quote! {
-                        ::std::iter::once(std::usize::MAX)#(.chain(#recurse))*.min().unwrap()
+                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.min().unwrap()
                     }
                 }
                 Fields::Unit => {
                     // Unit structs have an infinite base length
-                    quote!(std::usize::MAX)
+                    quote!(Some(std::usize::MAX))
                 }
             }
         }
@@ -279,7 +176,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
 }
 
 /// Generate the function splitting the divisible
-fn generate_split_into_blocks_declarations(data: &Data) -> TokenStream {
+fn generate_split_declarations(data: &Data) -> TokenStream {
     match *data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {

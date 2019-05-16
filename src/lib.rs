@@ -14,7 +14,7 @@ use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
 #[proc_macro_derive(Divisible, attributes(divide_by, power))]
 pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let power = power_type(&input.attrs);
+    let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -63,11 +63,6 @@ fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) ->
         })
 }
 
-/// Extract power attribute's value
-fn power_type(attributes: &[Attribute]) -> Group {
-    attributes_search(attributes, "power").expect("missing power attribute")
-}
-
 /// What strategy to apply when dividing a field.
 #[derive(Debug, PartialEq, Eq)]
 enum DivideBy {
@@ -77,6 +72,50 @@ enum DivideBy {
     Default,
     /// Divide using divisible
     Divisible,
+}
+
+/// find divisible field if only one.
+fn divisible_content(data: &Data) -> Option<TokenStream> {
+    match *data {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                let mut names = fields
+                    .named
+                    .iter()
+                    .filter(|f| find_strategy(f) == DivideBy::Divisible)
+                    .map(|f| {
+                        let name = &f.ident;
+                        quote! {#name}
+                    });
+                let first_name = names.next();
+                let second_name = names.next();
+                if first_name.is_none() || second_name.is_some() {
+                    None
+                } else {
+                    first_name
+                }
+            }
+            Fields::Unnamed(ref fields) => {
+                let mut names = fields
+                    .unnamed
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, f)| find_strategy(f) == DivideBy::Divisible)
+                    .map(|(i, _)| {
+                        quote! {#i}
+                    });
+                let first_name = names.next();
+                let second_name = names.next();
+                if first_name.is_none() || second_name.is_some() {
+                    None
+                } else {
+                    first_name
+                }
+            }
+            Fields::Unit => None,
+        },
+        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    }
 }
 
 /// figure out what division strategy to use for a given field.
@@ -232,4 +271,45 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     }
+}
+
+// now implement ParallelIterator
+
+#[proc_macro_derive(
+    ParallelIterator,
+    attributes(divide_by, power, item, sequential_iterator, iterator_extraction)
+)]
+pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
+    let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
+    let sequential_iterator = attributes_search(&input.attrs, "sequential_iterator")
+        .expect("missing sequential_iterator attribute");
+    let iterator_extraction = attributes_search(&input.attrs, "iterator_extraction")
+        .expect("missing iterator_extraction attribute");
+    let name = input.ident;
+    let generics = input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let inner_iterator =
+        divisible_content(&input.data).expect("we could not find only one iterator inside us");
+    let expanded = quote! {
+        impl #impl_generics ParallelIterator<#power> for #name #ty_generics #where_clause {
+            type SequentialIterator = #sequential_iterator;
+            type Item = #item;
+            fn iter(mut self, size: usize) -> (Self::SequentialIterator, Self) {
+                let (i, remaining) = self.#inner_iterator.iter(size);
+                self.#inner_iterator = remaining;
+                (#iterator_extraction, self)
+            }
+            fn blocks_sizes(&mut self) -> Box<Iterator<Item=usize>> {
+                self.#inner_iterator.blocks_sizes()
+            }
+            fn policy(&self) -> Policy {
+                self.#inner_iterator.policy()
+            }
+        }
+    };
+
+    proc_macro::TokenStream::from(expanded)
 }

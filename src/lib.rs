@@ -310,7 +310,24 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
                 self.#inner_iterator.policy()
             }
         }
-        impl #impl_generics IntoIterator for #name #ty_generics #where_clause {
+
+    };
+
+    proc_macro::TokenStream::from(expanded)
+}
+
+// now implement IntoIterator
+#[proc_macro_derive(IntoIterator, attributes(divide_by, power, item))]
+pub fn derive_intoiterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
+    let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
+    let name = input.ident;
+    let generics = input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let expanded = quote! {
+            impl #impl_generics IntoIterator for #name #ty_generics #where_clause {
             type Item = #item;
             type IntoIter = std::iter::FlatMap<
                     crate::divisibility::BlocksIterator<#power, Self, Box<Iterator<Item = usize>>>,

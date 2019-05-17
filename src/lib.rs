@@ -306,7 +306,7 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
             fn blocks_sizes(&mut self) -> Box<Iterator<Item=usize>> {
                 self.#inner_iterator.blocks_sizes()
             }
-            fn policy(&self) -> Policy {
+            fn policy(&self) -> crate::Policy {
                 self.#inner_iterator.policy()
             }
         }

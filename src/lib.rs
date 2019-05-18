@@ -8,17 +8,27 @@
 #![recursion_limit = "256"]
 extern crate proc_macro;
 
-use proc_macro2::{Group, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
 
-#[proc_macro_derive(Divisible, attributes(divide_by, power))]
+#[proc_macro_derive(Divisible, attributes(divide_by, power, trait_bounds))]
 pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let name = input.ident;
+    let bounds = attributes_search(&input.attrs, "trait_bounds");
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let proto = bounds // user given bounds override automatic bounds
+        .map(|b| {
+            quote! {impl <#b> Divisible<#power> for #name #ty_generics} // TODO: why the where clause ?
+        })
+        .unwrap_or(
+            quote! {impl #impl_generics Divisible<#power> for #name #ty_generics #where_clause},
+        );
+
     // implement base_length
     let len_expression = generate_len_expression(&input.data);
 
@@ -29,7 +39,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let right_fields = generate_fields(&input.data, 1);
 
     let expanded = quote! {
-        impl #impl_generics Divisible<#power> for #name #ty_generics #where_clause {
+        #proto {
             fn base_length(&self) -> Option<usize> {
                 #len_expression
             }
@@ -50,7 +60,10 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 }
 
 /// Return argument of first attribute with given name.
-fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) -> Option<Group> {
+fn attributes_search(
+    attributes: &[Attribute],
+    searched_attribute_name: &str,
+) -> Option<TokenStream> {
     attributes
         .into_iter()
         .find(|a| {
@@ -62,6 +75,7 @@ fn attributes_search(attributes: &[Attribute], searched_attribute_name: &str) ->
             let possible_group: Result<proc_macro2::Group, _> = syn::parse2(a.tts.clone());
             possible_group.ok()
         })
+        .map(|g| g.stream())
 }
 
 /// What strategy to apply when dividing a field.
@@ -122,9 +136,8 @@ fn divisible_content(data: &Data) -> Option<TokenStream> {
 /// figure out what division strategy to use for a given field.
 fn find_strategy(field: &syn::Field) -> DivideBy {
     attributes_search(&field.attrs, "divide_by")
-        .map(|group| {
-            let string = group
-                .stream()
+        .map(|stream| {
+            let string = stream
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect::<String>();
@@ -278,12 +291,20 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
 
 #[proc_macro_derive(
     ParallelIterator,
-    attributes(divide_by, power, item, sequential_iterator, iterator_extraction)
+    attributes(
+        divide_by,
+        power,
+        item,
+        sequential_iterator,
+        iterator_extraction,
+        trait_bounds
+    )
 )]
 pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
+    let bounds = attributes_search(&input.attrs, "trait_bounds");
     let sequential_iterator = attributes_search(&input.attrs, "sequential_iterator")
         .expect("missing sequential_iterator attribute");
     let iterator_extraction = attributes_search(&input.attrs, "iterator_extraction")
@@ -291,11 +312,18 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let proto = bounds // user given bounds override automatic bounds
+        .map(|b| {
+            quote! {impl <#b> ParallelIterator<#power> for #name #ty_generics} // TODO: why the where clause ?
+        })
+        .unwrap_or(
+            quote! {impl #impl_generics ParallelIterator<#power> for #name #ty_generics #where_clause},
+        );
 
     let inner_iterator =
         divisible_content(&input.data).expect("we could not find only one iterator inside us");
     let expanded = quote! {
-        impl #impl_generics ParallelIterator<#power> for #name #ty_generics #where_clause {
+        #proto {
             type SequentialIterator = #sequential_iterator;
             type Item = #item;
             fn iter(mut self, size: usize) -> (Self::SequentialIterator, Self) {
@@ -317,17 +345,23 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
 }
 
 // now implement IntoIterator
-#[proc_macro_derive(IntoIterator, attributes(divide_by, power, item))]
+#[proc_macro_derive(IntoIterator, attributes(divide_by, power, item, trait_bounds))]
 pub fn derive_intoiterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
+    let bounds = attributes_search(&input.attrs, "trait_bounds");
     let name = input.ident;
     let generics = input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let proto = bounds // user given bounds override automatic bounds
+        .map(|b| {
+            quote! {impl <#b> IntoIterator for #name #ty_generics} // TODO: why the where clause ?
+        })
+        .unwrap_or(quote! {impl #impl_generics IntoIterator for #name #ty_generics #where_clause});
 
     let expanded = quote! {
-            impl #impl_generics IntoIterator for #name #ty_generics #where_clause {
+        #proto {
             type Item = #item;
             type IntoIter = std::iter::FlatMap<
                     crate::divisibility::BlocksIterator<#power, Self, Box<Iterator<Item = usize>>>,

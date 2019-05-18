@@ -83,6 +83,8 @@ fn attributes_search(
 enum DivideBy {
     /// Clone the field
     Clone,
+    /// Copy the field (mainly for functions which implement Copy but not Clone)
+    Copy,
     /// Take a default value on right side and move on the left
     Default,
     /// Divide using divisible
@@ -144,6 +146,7 @@ fn find_strategy(field: &syn::Field) -> DivideBy {
             match string.as_ref() {
                 "clone" => DivideBy::Clone,
                 "default" => DivideBy::Default,
+                "copy" => DivideBy::Copy,
                 _ => DivideBy::Divisible,
             }
         })
@@ -240,6 +243,11 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                                 (self.#name.clone(), self.#name)
                             }
                         }
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#name, self.#name)
+                            }
+                        }
                         DivideBy::Default => {
                             quote! {
                                 (self.#name, Default::default())
@@ -263,6 +271,11 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                         DivideBy::Clone => {
                             quote! {
                                 (self.#i.clone(), self.#i)
+                            }
+                        }
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#i, self.#i)
                             }
                         }
                         DivideBy::Default => {

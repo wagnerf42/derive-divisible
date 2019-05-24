@@ -23,11 +23,9 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
     let proto = bounds // user given bounds override automatic bounds
         .map(|b| {
-            quote! {impl <#b> Divisible<#power> for #name #ty_generics} // TODO: why the where clause ?
+            quote! {impl <#b> Divisible for #name #ty_generics} // TODO: why the where clause ?
         })
-        .unwrap_or(
-            quote! {impl #impl_generics Divisible<#power> for #name #ty_generics #where_clause},
-        );
+        .unwrap_or(quote! {impl #impl_generics Divisible for #name #ty_generics #where_clause});
 
     // implement base_length
     let len_expression = generate_len_expression(&input.data);
@@ -40,6 +38,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
 
     let expanded = quote! {
         #proto {
+            type Power = #power;
             fn base_length(&self) -> Option<usize> {
                 #len_expression
             }
@@ -315,7 +314,6 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
 )]
 pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
     let bounds = attributes_search(&input.attrs, "trait_bounds");
     let sequential_iterator = attributes_search(&input.attrs, "sequential_iterator")
@@ -327,10 +325,10 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let proto = bounds // user given bounds override automatic bounds
         .map(|b| {
-            quote! {impl <#b> ParallelIterator<#power> for #name #ty_generics} // TODO: why the where clause ?
+            quote! {impl <#b> ParallelIterator for #name #ty_generics} // TODO: why the where clause ?
         })
         .unwrap_or(
-            quote! {impl #impl_generics ParallelIterator<#power> for #name #ty_generics #where_clause},
+            quote! {impl #impl_generics ParallelIterator for #name #ty_generics #where_clause},
         );
 
     let inner_iterator =
@@ -377,7 +375,7 @@ pub fn derive_intoiterator(input: proc_macro::TokenStream) -> proc_macro::TokenS
         #proto {
             type Item = #item;
             type IntoIter = std::iter::FlatMap<
-                    crate::divisibility::BlocksIterator<#power, Self, Box<Iterator<Item = usize>>>,
+                    crate::divisibility::BlocksIterator<Self, Box<Iterator<Item = usize>>>,
                     std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<Self::Item>>>,
                     fn(Self) -> std::iter::Flatten<std::collections::linked_list::IntoIter<Vec<Self::Item>>>,
             >;

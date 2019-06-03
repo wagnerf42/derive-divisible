@@ -337,8 +337,8 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
         #proto {
             type SequentialIterator = #sequential_iterator;
             type Item = #item;
-            fn iter(mut self, size: usize) -> (Self::SequentialIterator, Self) {
-                let (i, remaining) = self.#inner_iterator.iter(size);
+            fn extract_iter(mut self, size: usize) -> (Self::SequentialIterator, Self) {
+                let (i, remaining) = self.#inner_iterator.extract_iter(size);
                 self.#inner_iterator = remaining;
                 (#iterator_extraction, self)
             }
@@ -359,7 +359,6 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
 #[proc_macro_derive(IntoIterator, attributes(divide_by, power, item, trait_bounds))]
 pub fn derive_intoiterator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let power = attributes_search(&input.attrs, "power").expect("missing power attribute");
     let item = attributes_search(&input.attrs, "item").expect("missing item attribute");
     let bounds = attributes_search(&input.attrs, "trait_bounds");
     let name = input.ident;

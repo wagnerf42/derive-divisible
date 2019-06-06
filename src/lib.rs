@@ -337,10 +337,13 @@ pub fn derive_parallel_iterator(input: proc_macro::TokenStream) -> proc_macro::T
         #proto {
             type SequentialIterator = #sequential_iterator;
             type Item = #item;
-            fn extract_iter(mut self, size: usize) -> (Self::SequentialIterator, Self) {
-                let (i, remaining) = self.#inner_iterator.extract_iter(size);
-                self.#inner_iterator = remaining;
-                (#iterator_extraction, self)
+            fn extract_iter(&mut self, size: usize) -> Self::SequentialIterator {
+                let i = self.#inner_iterator.extract_iter(size);
+                #iterator_extraction
+            }
+            fn to_sequential(self) -> Self::SequentialIterator {
+                let i = self.#inner_iterator.to_sequential();
+                #iterator_extraction
             }
             fn blocks_sizes(&mut self) -> Box<Iterator<Item=usize>> {
                 self.#inner_iterator.blocks_sizes()

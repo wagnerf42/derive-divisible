@@ -203,7 +203,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#name.base_length())}
                         });
                     quote! {
-                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.min().unwrap()
+                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.filter_map(|s| s).min()
                     }
                 }
                 Fields::Unnamed(ref fields) => {
@@ -216,7 +216,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
                             quote! {::std::iter::once(self.#i.base_length())}
                         });
                     quote! {
-                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.min().unwrap()
+                        ::std::iter::once(Some(std::usize::MAX))#(.chain(#recurse))*.filter_map(|s| s).min()
                     }
                 }
                 Fields::Unit => {

@@ -31,6 +31,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     let len_expression = generate_len_expression(&input.data);
 
     // split into tuple of couples (left and right)
+    let split_at_expression = generate_split_at_declarations(&input.data);
     let split_expression = generate_split_declarations(&input.data);
     // move tuple into fields of split structure
     let left_fields = generate_fields(&input.data, 0);
@@ -43,6 +44,17 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                 #len_expression
             }
             fn divide_at(self, index: usize) -> (Self, Self) {
+                #split_at_expression
+                (
+                    #name {
+                        #left_fields
+                    },
+                    #name{
+                        #right_fields
+                    }
+                )
+            }
+            fn divide(self) -> (Self, Self) {
                 #split_expression
                 (
                     #name {
@@ -53,6 +65,7 @@ pub fn derive_divisible(input: proc_macro::TokenStream) -> proc_macro::TokenStre
                     }
                 )
             }
+
         }
     };
     proc_macro::TokenStream::from(expanded)
@@ -230,7 +243,7 @@ fn generate_len_expression(data: &Data) -> TokenStream {
 }
 
 /// Generate the function splitting the divisible
-fn generate_split_declarations(data: &Data) -> TokenStream {
+fn generate_split_at_declarations(data: &Data) -> TokenStream {
     match *data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
@@ -285,6 +298,76 @@ fn generate_split_declarations(data: &Data) -> TokenStream {
                         DivideBy::Divisible => {
                             quote! {
                                 self.#i.divide_at(index)
+                            }
+                        }
+                    }
+                });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
+                }
+            }
+            Fields::Unit => quote!(),
+        },
+        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+    }
+}
+
+/// Generate the function splitting the divisible
+fn generate_split_declarations(data: &Data) -> TokenStream {
+    match *data {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                let recurse = fields.named.iter().map(|f| {
+                    let name = &f.ident;
+                    match find_strategy(&f) {
+                        DivideBy::Clone => {
+                            quote! {
+                                (self.#name.clone(), self.#name)
+                            }
+                        }
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#name, self.#name)
+                            }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#name, Default::default())
+                            }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#name.divide()
+                            }
+                        }
+                    }
+                });
+                quote! {
+                    let split_fields = (#(#recurse, )*);
+                }
+            }
+            Fields::Unnamed(ref fields) => {
+                let recurse = fields.unnamed.iter().enumerate().map(|(i, f)| {
+                    let i = syn::Index::from(i);
+                    match find_strategy(&f) {
+                        DivideBy::Clone => {
+                            quote! {
+                                (self.#i.clone(), self.#i)
+                            }
+                        }
+                        DivideBy::Copy => {
+                            quote! {
+                                (self.#i, self.#i)
+                            }
+                        }
+                        DivideBy::Default => {
+                            quote! {
+                                (self.#i, Default::default())
+                            }
+                        }
+                        DivideBy::Divisible => {
+                            quote! {
+                                self.#i.divide(index)
                             }
                         }
                     }
